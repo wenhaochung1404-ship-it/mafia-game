@@ -71,6 +71,10 @@ async function startServer() {
       const message: ClientMessage = JSON.parse(data.toString());
 
       switch (message.type) {
+        case "PING": {
+          sendToPlayer(ws, { type: "PONG" });
+          break;
+        }
         case "CREATE_ROOM": {
           const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
           const playerId = uuidv4();

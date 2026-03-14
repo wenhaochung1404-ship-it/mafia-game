@@ -50,77 +50,107 @@ export default function App() {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let socket: WebSocket | null = null;
+    let reconnectTimeout: NodeJS.Timeout;
+    let heartbeatInterval: NodeJS.Timeout;
+
+    const connect = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const newSocket = new WebSocket(`${protocol}//${window.location.host}`);
+      
+      newSocket.onopen = () => {
+        console.log('Connected to server');
+        setWs(newSocket);
+        setIsConnected(true);
+        setError(null);
+        
+        const savedPlayerId = localStorage.getItem('mafia_player_id');
+        const savedRoomId = localStorage.getItem('mafia_room_id');
+        
+        if (savedPlayerId && savedRoomId) {
+          newSocket.send(JSON.stringify({ 
+            type: 'RECONNECT', 
+            roomId: savedRoomId, 
+            playerId: savedPlayerId 
+          }));
+        }
+
+        // Start heartbeat
+        heartbeatInterval = setInterval(() => {
+          if (newSocket.readyState === WebSocket.OPEN) {
+            newSocket.send(JSON.stringify({ type: 'PING' }));
+          }
+        }, 20000);
+      };
+
+      newSocket.onclose = () => {
+        console.log('Disconnected from server');
+        setIsConnected(false);
+        setWs(null);
+        clearInterval(heartbeatInterval);
+        // Attempt to reconnect after 2 seconds
+        reconnectTimeout = setTimeout(connect, 2000);
+      };
+
+      newSocket.onerror = (err) => {
+        console.error('WebSocket error:', err);
+      };
+
+      newSocket.onmessage = (event) => {
+        try {
+          const message: ServerMessage = JSON.parse(event.data);
+          if (message.type === 'PONG') return;
+
+          switch (message.type) {
+            case 'INIT_STATE':
+              setGameState(message.state);
+              setPlayerId(message.playerId);
+              localStorage.setItem('mafia_player_id', message.playerId);
+              localStorage.setItem('mafia_room_id', message.state.roomId);
+              localStorage.setItem('mafia_player_name', latestPlayerName.current || message.state.players.find(p => p.id === message.playerId)?.name || '');
+              break;
+            case 'UPDATE_STATE':
+              setGameState(message.state);
+              break;
+            case 'CHAT_MESSAGE':
+              setChats(prev => [...prev, { sender: message.sender, message: message.message, isSystem: message.isSystem }]);
+              break;
+            case 'ERROR':
+              if (message.message === 'Room not found') {
+                setError(t.errorRoomNotFound);
+                localStorage.removeItem('mafia_room_id');
+                localStorage.removeItem('mafia_player_id');
+                setGameState(null);
+              } else {
+                setError(message.message);
+              }
+              setTimeout(() => setError(null), 3000);
+              break;
+          }
+        } catch (e) {
+          console.error('Failed to parse message:', e);
+        }
+      };
+
+      socket = newSocket;
+    };
+
     const params = new URLSearchParams(window.location.search);
     const roomFromUrl = params.get('room');
     if (roomFromUrl) {
       setRoomId(roomFromUrl.toUpperCase());
     }
 
-    const savedPlayerId = localStorage.getItem('mafia_player_id');
-    const savedRoomId = localStorage.getItem('mafia_room_id');
     const savedPlayerName = localStorage.getItem('mafia_player_name');
-    
     if (savedPlayerName) setPlayerName(savedPlayerName);
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${window.location.host}`);
-    
-    socket.onopen = () => {
-      console.log('Connected to server');
-      setWs(socket);
-      setIsConnected(true);
-      
-      // Attempt to reconnect if we have saved state
-      if (savedPlayerId && savedRoomId) {
-        socket.send(JSON.stringify({ 
-          type: 'RECONNECT', 
-          roomId: savedRoomId, 
-          playerId: savedPlayerId 
-        }));
-      }
-    };
+    connect();
 
-    socket.onclose = () => {
-      console.log('Disconnected from server');
-      setIsConnected(false);
-      setWs(null);
+    return () => {
+      socket?.close();
+      clearTimeout(reconnectTimeout);
+      clearInterval(heartbeatInterval);
     };
-
-    socket.onerror = (err) => {
-      console.error('WebSocket error:', err);
-      setError('Connection error. Please refresh.');
-    };
-
-    socket.onmessage = (event) => {
-      const message: ServerMessage = JSON.parse(event.data);
-      switch (message.type) {
-        case 'INIT_STATE':
-          setGameState(message.state);
-          setPlayerId(message.playerId);
-          localStorage.setItem('mafia_player_id', message.playerId);
-          localStorage.setItem('mafia_room_id', message.state.roomId);
-          localStorage.setItem('mafia_player_name', latestPlayerName.current || message.state.players.find(p => p.id === message.playerId)?.name || '');
-          break;
-        case 'UPDATE_STATE':
-          setGameState(message.state);
-          break;
-        case 'CHAT_MESSAGE':
-          setChats(prev => [...prev, { sender: message.sender, message: message.message, isSystem: message.isSystem }]);
-          break;
-        case 'ERROR':
-          if (message.message === 'Room not found') {
-            setError(t.errorRoomNotFound);
-            localStorage.removeItem('mafia_room_id');
-            localStorage.removeItem('mafia_player_id');
-          } else {
-            setError(message.message);
-          }
-          setTimeout(() => setError(null), 3000);
-          break;
-      }
-    };
-
-    return () => socket.close();
   }, []);
 
   useEffect(() => {

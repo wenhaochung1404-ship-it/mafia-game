@@ -32,7 +32,8 @@ export type ServerMessage =
   | { type: 'INIT_STATE'; state: GameState; playerId: string }
   | { type: 'UPDATE_STATE'; state: GameState }
   | { type: 'CHAT_MESSAGE'; sender: string; message: string; isSystem?: boolean }
-  | { type: 'ERROR'; message: string };
+  | { type: 'ERROR'; message: string }
+  | { type: 'PONG' };
 
 export type ClientMessage = 
   | { type: 'JOIN_ROOM'; roomId: string; playerName: string }
@@ -41,4 +42,5 @@ export type ClientMessage =
   | { type: 'SUBMIT_ACTION'; targetId: string }
   | { type: 'SUBMIT_VOTE'; targetId: string }
   | { type: 'SEND_CHAT'; message: string }
-  | { type: 'START_GAME' };
+  | { type: 'START_GAME' }
+  | { type: 'PING' };
