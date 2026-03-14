@@ -54,15 +54,20 @@ export default function App() {
     let reconnectTimeout: NodeJS.Timeout;
     let heartbeatInterval: NodeJS.Timeout;
 
+    let reconnectDelay = 1000;
+
     const connect = () => {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const newSocket = new WebSocket(`${protocol}//${window.location.host}`);
+      const wsUrl = `${protocol}//${window.location.host}`;
+      console.log('Attempting connection to:', wsUrl);
+      const newSocket = new WebSocket(wsUrl);
       
       newSocket.onopen = () => {
-        console.log('Connected to server');
+        console.log('Game WebSocket connected to:', wsUrl);
         setWs(newSocket);
         setIsConnected(true);
         setError(null);
+        reconnectDelay = 1000; // Reset delay on success
         
         const savedPlayerId = localStorage.getItem('mafia_player_id');
         const savedRoomId = localStorage.getItem('mafia_room_id');
@@ -84,16 +89,22 @@ export default function App() {
       };
 
       newSocket.onclose = () => {
-        console.log('Disconnected from server');
+        console.log('Game WebSocket disconnected');
         setIsConnected(false);
         setWs(null);
         clearInterval(heartbeatInterval);
-        // Attempt to reconnect after 2 seconds
-        reconnectTimeout = setTimeout(connect, 2000);
+        
+        // Exponential backoff for reconnection
+        reconnectTimeout = setTimeout(() => {
+          reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+          console.log(`Attempting to reconnect in ${reconnectDelay}ms...`);
+          connect();
+        }, reconnectDelay);
       };
 
       newSocket.onerror = (err) => {
-        console.error('WebSocket error:', err);
+        console.error('Game WebSocket error:', err);
+        setError('Connection failed. Retrying...');
       };
 
       newSocket.onmessage = (event) => {
@@ -292,7 +303,21 @@ export default function App() {
               <span className="text-[10px] font-mono uppercase tracking-widest text-white/30">
                 {isConnected ? 'Connected' : 'Connecting...'}
               </span>
+              {!isConnected && (
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="text-[10px] underline text-white/50 hover:text-white"
+                >
+                  Force Refresh
+                </button>
+              )}
             </div>
+            <p className="mt-4 text-[10px] text-white/20 italic">
+              Debug: {window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//{window.location.host}
+            </p>
+            <p className="mt-1 text-[10px] text-white/20 italic">
+              Note: "[vite] failed to connect" console errors are normal in this environment and can be ignored.
+            </p>
           </div>
 
           <div className="space-y-4">

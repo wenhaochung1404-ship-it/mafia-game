@@ -13,7 +13,20 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+let aiInstance: GoogleGenAI | null = null;
+
+function getAI() {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error("GEMINI_API_KEY is missing in environment variables.");
+      throw new Error("GEMINI_API_KEY is required for AI features.");
+    }
+    console.log("GEMINI_API_KEY is present, length:", apiKey.length);
+    aiInstance = new GoogleGenAI({ apiKey });
+  }
+  return aiInstance;
+}
 
 async function startServer() {
   const app = express();
@@ -25,7 +38,12 @@ async function startServer() {
 
   // API routes go here
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", rooms: rooms.size });
+    res.json({ 
+      status: "ok", 
+      rooms: rooms.size,
+      uptime: process.uptime(),
+      memory: process.memoryUsage()
+    });
   });
 
   // Vite middleware for development
@@ -47,7 +65,23 @@ async function startServer() {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 
-  const wss = new WebSocketServer({ server });
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (request, socket, head) => {
+    const { pathname } = new URL(request.url || '', `http://${request.headers.host}`);
+    
+    console.log(`Upgrade request for: ${pathname}`);
+    console.log(`Headers:`, JSON.stringify(request.headers));
+    
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      console.log(`Upgrade successful for: ${pathname}`);
+      wss.emit('connection', ws, request);
+    });
+  });
+
+  wss.on("error", (err) => {
+    console.error("WSS Server Error:", err);
+  });
 
   wss.on("connection", (ws) => {
     let currentPlayerId: string | null = null;
@@ -55,7 +89,11 @@ async function startServer() {
 
     ws.on("close", () => {
       if (currentPlayerId && currentRoomId) {
-        playerSockets.delete(currentPlayerId);
+        // Only delete if this is still the active socket for this player
+        if (playerSockets.get(currentPlayerId) === ws) {
+          playerSockets.delete(currentPlayerId);
+        }
+        
         const state = rooms.get(currentRoomId);
         if (state) {
           const player = state.players.find(p => p.id === currentPlayerId);
@@ -379,6 +417,7 @@ async function startServer() {
     Only output the message text in ${lang}.`;
 
     try {
+      const ai = getAI();
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt
@@ -417,6 +456,7 @@ async function startServer() {
     Only output the message text in ${lang}.`;
 
     try {
+      const ai = getAI();
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt
