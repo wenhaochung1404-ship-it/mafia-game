@@ -38,8 +38,14 @@ export default function App() {
   const [pendingAction, setPendingAction] = useState<{ targetId: string; type: 'SUBMIT_ACTION' | 'SUBMIT_VOTE'; actionName: string; targetName: string } | null>(null);
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('mafia_lang') as Language) || 'en');
   const [copied, setCopied] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   
   const t = translations[language];
+  const latestPlayerName = useRef(playerName);
+
+  useEffect(() => {
+    latestPlayerName.current = playerName;
+  }, [playerName]);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +68,7 @@ export default function App() {
     socket.onopen = () => {
       console.log('Connected to server');
       setWs(socket);
+      setIsConnected(true);
       
       // Attempt to reconnect if we have saved state
       if (savedPlayerId && savedRoomId) {
@@ -73,6 +80,17 @@ export default function App() {
       }
     };
 
+    socket.onclose = () => {
+      console.log('Disconnected from server');
+      setIsConnected(false);
+      setWs(null);
+    };
+
+    socket.onerror = (err) => {
+      console.error('WebSocket error:', err);
+      setError('Connection error. Please refresh.');
+    };
+
     socket.onmessage = (event) => {
       const message: ServerMessage = JSON.parse(event.data);
       switch (message.type) {
@@ -81,7 +99,7 @@ export default function App() {
           setPlayerId(message.playerId);
           localStorage.setItem('mafia_player_id', message.playerId);
           localStorage.setItem('mafia_room_id', message.state.roomId);
-          localStorage.setItem('mafia_player_name', playerName || message.state.players.find(p => p.id === message.playerId)?.name || '');
+          localStorage.setItem('mafia_player_name', latestPlayerName.current || message.state.players.find(p => p.id === message.playerId)?.name || '');
           break;
         case 'UPDATE_STATE':
           setGameState(message.state);
@@ -110,7 +128,12 @@ export default function App() {
   }, [chats]);
 
   const sendMessage = (msg: ClientMessage) => {
-    ws?.send(JSON.stringify(msg));
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(msg));
+    } else {
+      setError('Not connected to server. Please wait...');
+      setTimeout(() => setError(null), 3000);
+    }
   };
 
   const handleCreateRoom = () => {
@@ -234,6 +257,12 @@ export default function App() {
             </div>
             <h1 className="text-3xl font-bold tracking-tighter uppercase italic">{t.appName}</h1>
             <p className="text-white/50 text-sm mt-1">{t.tagline}</p>
+            <div className="mt-4 flex items-center gap-2">
+              <div className={cn("w-2 h-2 rounded-full animate-pulse", isConnected ? "bg-emerald-500" : "bg-red-500")} />
+              <span className="text-[10px] font-mono uppercase tracking-widest text-white/30">
+                {isConnected ? 'Connected' : 'Connecting...'}
+              </span>
+            </div>
           </div>
 
           <div className="space-y-4">

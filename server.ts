@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { v4 as uuidv4 } from "uuid";
 import path from "path";
 import { fileURLToPath } from "url";
-import { GameState, Player, Role, Phase, ClientMessage, ServerMessage } from "./src/types.js";
+import { GameState, Player, Role, Phase, ClientMessage, ServerMessage } from "./src/types";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
@@ -234,10 +234,6 @@ async function startServer() {
           break;
         }
       }
-    });
-
-    ws.on("close", () => {
-      if (currentPlayerId) playerSockets.delete(currentPlayerId);
     });
   });
 
