@@ -1,0 +1,5 @@
+{
+  "name": "Mafia Game Engine",
+  "description": "A real-time multiplayer Mafia game with AI-simulated players and a dedicated Game Master engine.",
+  "requestFramePermissions": []
+}
